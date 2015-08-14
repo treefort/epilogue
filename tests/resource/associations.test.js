@@ -95,6 +95,16 @@ describe('Resource(associations)', function() {
         });
 
         rest.resource({
+          model: test.models.Person,
+          include: [
+            { model: test.models.Address, as: 'addy' },
+            { model: test.models.Hobby, as: 'hobbies' }
+          ],
+          endpoints: ['/personWithTwoIncludesKeepIdentifier', '/personWithTwoIncludesKeepIdentifier/:id'],
+          keepIncludeIdentifier: true
+        });
+
+        rest.resource({
           model: test.models.Address,
           endpoints: ['/addresses', '/addresses/:id']
         });
@@ -305,6 +315,61 @@ describe('Resource(associations)', function() {
         delete expectedPerson.addy_id;
         request.get({
           url: test.baseUrl + '/personWithTwoIncludes?q=' + expectedPerson.name
+        }, function(error, response, body) {
+          expect(response.statusCode).to.equal(200);
+          body = _.isObject(body) ? body : JSON.parse(body);
+          expect(body[0]).to.eql(expectedPerson);
+          done();
+        });
+      });
+    });
+
+    it('should include two associations and relevant indentifiers', function(done) {
+      var hobbyRecords = [
+        { name: 'programming' },
+        { name: 'baseball' }
+      ];
+      var records = [
+        {
+          person: { name: 'john' },
+          address: { street: '100 First Street ' }
+        },
+        {
+          person: { name: 'joe' },
+          address: { street: '200 Second Street' }
+        }
+      ];
+      var expectedPerson;
+      var expectedId;
+      Promise.resolve(records).each(function(record) {
+        return Promise.all([
+          test.models.Person.create(record.person),
+          test.models.Address.create(record.address)
+        ]).spread(function(person, address) {
+          return person.setAddy(address);
+        });
+      }).then(function() {
+        return Promise.all([
+          test.models.Hobby.create(hobbyRecords[0]),
+          test.models.Hobby.create(hobbyRecords[1]),
+          test.models.Person.findAll()
+        ]);
+      }).spread(function(hobby0, hobby1, people) {
+        var person = people[0];
+        expectedId = person.id;
+        return person.setHobbies([hobby0, hobby1]);
+      }).then(function(hobbies) {
+        return test.models.Person.find({
+          where: { id: expectedId },
+          include: [
+            { model: test.models.Address, as: 'addy' },
+            { model: test.models.Hobby, as: 'hobbies' }
+          ]
+        });
+      }).then(function(person) {
+        expectedPerson = JSON.parse(JSON.stringify(person.dataValues));
+        request.get({
+          url: test.baseUrl + '/personWithTwoIncludesKeepIdentifier?q=' + expectedPerson.name
         }, function(error, response, body) {
           expect(response.statusCode).to.equal(200);
           body = _.isObject(body) ? body : JSON.parse(body);
